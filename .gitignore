@@ -1,0 +1,14 @@
+# Operating system files
+.DS_Store
+
+# Python virtual environment directory
+venv/
+.venv/
+
+# Generated Python files
+__pycache__/
+*.pyc
+
+# Credential configuration files
+*.env
+.env
