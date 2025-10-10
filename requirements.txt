@@ -1,0 +1,20 @@
+# requirements.txt
+
+# Web Scraping and Parsing Libraries
+# Requests: Used for making HTTP requests (getting the HTML from web pages).
+requests
+
+# beautifulsoup4: Used for parsing HTML and extracting data (like product names and ingredients).
+beautifulsoup4
+
+# pandas: Excellent for data cleaning, manipulation, and handling CSV files (import/export).
+pandas
+
+# Database Communication (PostgreSQL)
+# psycopg2-binary: The Python adapter/driver to connect to and interact with PostgreSQL.
+psycopg2-binary
+
+# Environment Configuration
+# python-dotenv: Helpful for loading environment variables (like your database credentials)
+# from a .env file, keeping sensitive data out of the main code.
+python-dotenv
