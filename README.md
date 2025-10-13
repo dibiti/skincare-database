@@ -36,6 +36,7 @@ The project is structured to separate the database configuration, fixed data fil
     - **`processed/`**: Cleaned and structured data (e.g., CSV) ready for database ingestion.
 - **`scraping_scripts/`**: Python scripts used for web scraping and data extraction.
     - **`the_ordinary_scraper.py/`**: Basic request to the website so far!!
+    - **`scrape_ingredients_haruharuwonder.py`**: I have notice that the brand haruharu wonder has a page dedicated a ingredients they use in their products, I decided to make a script to get that information about ingredientes to start populate my table, they are 97 total.
 - **`.gitignore`**: A file to ignore files and folders that should not be included in Git (like the `data/` folder).
 
 ---
