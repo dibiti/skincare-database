@@ -75,15 +75,44 @@ def parse_content(html_content):
     soup = BeautifulSoup(html_content, 'html.parser')
     product_data = {}
 
-    # 1. Extracting the Product Name (Name)
+    # Extracting the Product Name (Name)
     try:
         name_tag = soup.find('h1', class_='product-name')
-        product_data['Name'] = name_tag.text.strip()
+        full_text = name_tag.text.strip()
+        span_tag = name_tag.find('span', class_='sr-only')
+        if span_tag:
+            span_text = span_tag.text.strip()
+            product_data['Name'] = full_text.replace(span_text, '', 1).strip()
+        else:
+            product_data['Name'] = full_text
     except Exception as e:
         product_data['Name'] = "Name Not Found"
         print(f"Warning: Could not find product name. {e}")
 
-    # 2. Extracting the Price (Price)
+    # Extracting the Product Type 
+    try:
+        format_tag = soup.find('p', class_='format panel-item')
+    
+        if format_tag:
+            full_text = format_tag.text.strip()
+            span_title_tag = format_tag.find('span', class_='title')
+        
+            if span_title_tag:
+                title_text = span_title_tag.text.strip()
+
+                format_value = full_text.replace(title_text, '', 1).strip()
+            else:
+                format_value = full_text.replace('Format', '', 1).strip()
+            
+            product_data['Product Type'] = clean_text(format_value)
+        else:
+            product_data['Product Type'] = "Product Type Not Found"
+            
+    except Exception as e:
+        product_data['Product Type'] = "Product Type Not Found"
+        print(f"Warning: Could not find product type. Details: {e}")
+
+    # Extracting the Price (Price)
     try:
         price_tag = soup.find('span', class_='value')
         product_data['Price'] = price_tag.text.strip()
@@ -91,28 +120,75 @@ def parse_content(html_content):
         product_data['Price'] = "Price Not Found"
         print(f"Warning: Could not find product price. {e}")
     
+    # Extracting the Available Sizes (ml)
+    try:
+        size_tags = soup.find_all('span', class_='size-value')
+        raw_sizes = [tag.text.strip() for tag in size_tags if tag.text.strip()]
+        available_sizes = list(set(raw_sizes))
+        
+        if available_sizes:
+            product_data['Size (ml)'] = ", ".join(sorted(available_sizes))
+        else:
+            product_data['Size (ml)'] = "Size Not Found"
+            
+    except Exception as e:
+        product_data['Size (ml)'] = "Size Not Found"
+        print(f"Warning: Could not find product size options. Details: {e}")
     
-    # 3. Extracting the Target
+    # Extracting the Product Description
+    try:
+        description_div = soup.find('div', class_='overview-description-substring')
+        
+        if description_div:
+            raw_description = description_div.get_text(separator=' ', strip=True)
+            product_data['Description'] = clean_text(raw_description)
+        else:
+            product_data['Description'] = "Description Not Found"
+            
+    except Exception as e:
+        product_data['Description'] = "Description Not Found"
+        print(f"Warning: Could not find product description. Details: {e}")
+
+    # Extracting the Target
     try:
         target_tag = soup.find('p', class_='skin-concern panel-item')
-        target = target_tag.text
-        product_data['Target'] = clean_text(target) 
+        if target_tag:
+            full_text = target_tag.text.strip()
+            span_title_tag = target_tag.find('span', class_='title')
+        
+            if span_title_tag:
+                title_text = span_title_tag.text.strip()
+                target = full_text.replace(title_text, '', 1).strip()
+            else:
+                target = full_text # Pode ser necessário um tratamento manual aqui se for o caso
+            product_data['Target'] = clean_text(target) 
+        else:
+            product_data['Target'] = "Target Not Found"
     except Exception as e:
         product_data['Target'] = "Target Not Found"
         print(f"Warning: Could not find product name. {e}")
-
     
-    # 4. Extracting the Skin Type
+    # Extracting the Skin Type
     try:
         skintype_tag = soup.find('p', class_='suitedTo panel-item')
-        skintype = skintype_tag.text
-        product_data['Skin Type'] = clean_text(skintype) 
+        if skintype_tag:
+            full_text = skintype_tag.text.strip()
+            span_title_tag = skintype_tag.find('span', class_='title')
+        
+            if span_title_tag:
+                title_text = span_title_tag.text.strip()
+                skintype = full_text.replace(title_text, '', 1).strip()
+            else:
+                skintype = full_text
+            product_data['Skin Type'] = clean_text(skintype) 
+        else:
+            product_data['Skin Type'] = "Skin Type Not Found"
     except Exception as e:
         product_data['Skin Type'] = "Skin Type Not Found"
         print(f"Warning: Could not find product name. {e}")
 
     
-    # 4. Extracting the Ingredients
+    # Extracting the Ingredients
     try:
         ingredients_tag = soup.find('p', class_='ingredients-flyout-content')
         ingredients = ingredients_tag.text
@@ -155,10 +231,13 @@ if __name__ == "__main__":
                 
                 # Print results for immediate feedback
                 print(f"  Name: {results.get('Name')}")
+                print(f"  Product Type: {results.get('Product Type')}")
                 print(f"  Price: {results.get('Price')}")
+                print(f"  Size (ml): {results.get('Size (ml)')}")
+                print(f"  Description: {results.get('Description')[:80]}...")
+                print(f"  Ingredients: {results.get('Ingredients')}") 
                 print(f"  Target: {results.get('Target')}")
                 print(f"  Suited to: {results.get('Skin Type')}")
-                print(f"  Ingredients: {results.get('Ingredients')[:50]}...") # Print a snippet
                 
     
     # 6. Final summary and output
