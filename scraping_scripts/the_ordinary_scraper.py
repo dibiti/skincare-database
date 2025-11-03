@@ -5,12 +5,18 @@ from bs4 import BeautifulSoup
 import re
 import time
 
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.common.by import By 
+from selenium.common.exceptions import TimeoutException
+
 # The target URL is now the category listing page
 CATEGORY_URL = "https://theordinary.com/en-ch/category/skincare#product-search-results" 
 # Base URL for constructing full links
 BASE_URL = "https://theordinary.com"
 
-# --- 2. Helper Functions: Fetching and Cleaning ---
+# --- Fetching and Cleaning ---
 def fetch_page(url):
     """Fetches the HTML content of the target URL."""
     print(f"-> Fetching URL: {url}")
@@ -29,6 +35,42 @@ def fetch_page(url):
     except requests.exceptions.RequestException as e:
         print(f"ERROR: Could not fetch the page. Details: {e}")
         return None
+
+def fetch_page_with_js(url):
+    """Fetches the HTML content of the target URL after JavaScript execution (Fallback)."""
+    print(f"-> Fetching URL (JS mode): {url}")
+    
+    # Configure Chrome driver options
+    options = webdriver.ChromeOptions()
+    options.add_argument('--headless')  # Run the browser in the background
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    
+    # Initialize the driver
+    driver = None
+    try:
+        # Get the Chrome driver executable
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=options)
+        
+        driver.set_page_load_timeout(30) # Set a timeout for page load
+        driver.get(url)
+        
+        time.sleep(3) # Simple wait (3 seconds) to ensure all JS is executed
+        
+        html_content = driver.page_source
+        print("-> JS Page content successfully loaded.")
+        return html_content
+    
+    except TimeoutException:
+        print(f"ERROR: Selenium timed out loading the page.")
+        return None
+    except Exception as e:
+        print(f"ERROR: Could not fetch the page with JS. Details: {e}")
+        return None
+    finally:
+        if driver:
+            driver.quit() # Important to always close the browser instance
 
 def clean_text(text):
     """Removes excess whitespace, newlines, and replaces them with a single space."""
@@ -112,7 +154,7 @@ def parse_content(html_content):
         product_data['Product Type'] = "Product Type Not Found"
         print(f"Warning: Could not find product type. Details: {e}")
 
-    # Extracting the Price (Price)
+    # Extracting the Price 
     try:
         price_tag = soup.find('span', class_='value')
         product_data['Price'] = price_tag.text.strip()
@@ -218,26 +260,61 @@ if __name__ == "__main__":
         for i, url in enumerate(product_urls):
             print(f"\n--- SCRAPING PRODUCT {i+1} of {len(product_urls)} ---")
             
-            # 4. Fetch the individual product page
+            # 4. Fetch the individual product page (First attempt: standard requests)
             product_html = fetch_page(url)
+            results = {} # Initialize results here
             
-            # 5. Parse and extract data
             if product_html:
+                # 5. Parse and extract data (All fields, including a potentially empty description)
                 results = parse_content(product_html)
-                
-                # Add the URL to the results for tracking
                 results['Source_URL'] = url
+                
+                # --- FALLBACK LOGIC: Check Description and Use Selenium if needed ---
+                # Check if Description is empty or failed
+                is_description_empty = not results.get('Description') or \
+                                       results.get('Description') == "" or \
+                                       results.get('Description') == "Description Not Found"
+                
+                if is_description_empty:
+                    print("-> Description empty or not found. Activating JS Fallback (Selenium)...")
+                    
+                    # 6. Fetch the page again, this time with Selenium/JS
+                    js_html = fetch_page_with_js(url)
+                    
+                    if js_html:
+                        # 7. Re-parse ONLY the description field from the JS-rendered HTML
+                        js_soup = BeautifulSoup(js_html, 'html.parser')
+                        
+                        try:
+                            # Re-attempt the robust description extraction
+                            description_div = js_soup.find('div', class_='overview-description-substring')
+                            if description_div:
+                                raw_description = description_div.text 
+                                results['Description'] = clean_text(raw_description)
+                            else:
+                                results['Description'] = "Description Not Found (JS Fallback Failed)"
+                        except Exception:
+                            results['Description'] = "Description Error (JS Fallback)"
+                            
+                    else:
+                        print("-> ERROR: Failed to load with Selenium.")
+                # --- END OF FALLBACK LOGIC ---
+
                 all_product_data.append(results)
                 
                 # Print results for immediate feedback
-                print(f"  Name: {results.get('Name')}")
-                print(f"  Product Type: {results.get('Product Type')}")
-                print(f"  Price: {results.get('Price')}")
-                print(f"  Size (ml): {results.get('Size (ml)')}")
-                print(f"  Description: {results.get('Description')[:80]}...")
-                print(f"  Ingredients: {results.get('Ingredients')}") 
-                print(f"  Target: {results.get('Target')}")
-                print(f"  Suited to: {results.get('Skin Type')}")
+                print(f"   Name: {results.get('Name')}")
+                print(f"   Product Type: {results.get('Product Type')}")
+                print(f"   Price: {results.get('Price')}")
+                print(f"   Size (ml): {results.get('Size (ml)')}")
+                # Print the description, truncated to 80 chars
+                description_snippet = results.get('Description')
+                if description_snippet and len(description_snippet) > 180:
+                     description_snippet = description_snippet[:180] + "..."
+                print(f"   Description: {description_snippet}")
+                print(f"   Ingredients: {results.get('Ingredients')}") 
+                print(f"   Target: {results.get('Target')}")
+                print(f"   Suited to: {results.get('Skin Type')}")
                 
     
     # 6. Final summary and output
