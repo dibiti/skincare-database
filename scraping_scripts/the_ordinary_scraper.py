@@ -1,22 +1,22 @@
-# ordinary_scraper.py
-
 import requests
 from bs4 import BeautifulSoup
 import re
 import time
+import json
 
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By 
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, ElementClickInterceptedException
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 # The target URL is now the category listing page
 CATEGORY_URL = "https://theordinary.com/en-ch/category/skincare#product-search-results" 
 # Base URL for constructing full links
 BASE_URL = "https://theordinary.com"
 
-# --- Fetching and Cleaning ---
 def fetch_page(url):
     """Fetches the HTML content of the target URL."""
     print(f"-> Fetching URL: {url}")
@@ -26,8 +26,7 @@ def fetch_page(url):
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         # Wait a moment before requesting
-        time.sleep(1) 
-        
+        time.sleep(0.5) 
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status() # Check for HTTP errors (4xx or 5xx)
         return response.text
@@ -39,24 +38,20 @@ def fetch_page(url):
 def fetch_page_with_js(url):
     """Fetches the HTML content of the target URL after JavaScript execution (Fallback)."""
     print(f"-> Fetching URL (JS mode): {url}")
-    
-    # Configure Chrome driver options
     options = webdriver.ChromeOptions()
     options.add_argument('--headless')  # Run the browser in the background
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
     
-    # Initialize the driver
     driver = None
     try:
-        # Get the Chrome driver executable
         service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=options)
-        
-        driver.set_page_load_timeout(30) # Set a timeout for page load
+        driver.set_page_load_timeout(30)
         driver.get(url)
         
-        time.sleep(3) # Simple wait (3 seconds) to ensure all JS is executed
+        time.sleep(2) # Simple wait (2 seconds) to ensure all JS is executed
         
         html_content = driver.page_source
         print("-> JS Page content successfully loaded.")
@@ -72,19 +67,89 @@ def fetch_page_with_js(url):
         if driver:
             driver.quit() # Important to always close the browser instance
 
+def get_full_category_html_with_js(url):
+    """
+    Usa Selenium para carregar a página de categoria e clica em 'Load More' 
+    até que todos os produtos sejam exibidos.
+    """
+    print(f"\n--- Loading Full Category (JS) ---")
+    print(f"-> Initiating Selenium on: {url}")
+    
+    options = webdriver.ChromeOptions()
+    options.add_argument('--headless') 
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
+
+    driver = None
+    try:
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=options)
+        driver.set_page_load_timeout(30)
+        driver.get(url)
+
+        # Esperar que o primeiro botão Load More apareça (após o carregamento inicial de 12 produtos)
+        wait = WebDriverWait(driver, 15)
+        
+        while True:
+            try:
+                # Localizar o botão "Load More"
+                # Usando o seletor 'button.btn-load.more' que é o mais específico
+                load_more_button = wait.until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 'button.btn-load.more'))
+                )
+
+                if load_more_button.is_displayed() and load_more_button.is_enabled():
+                    print("-> Clicking 'Load More'...")
+                    driver.execute_script("arguments[0].click();", load_more_button)
+                    
+                    # Aguardar um pouco para que os novos produtos e o botão Load More reapareçam
+                    # 1.5s é um bom balanço entre velocidade e estabilidade
+                    time.sleep(1.5) 
+                else:
+                    print("-> 'Load More' button not visible or enabled. All products loaded.")
+                    break # Sai do loop se não estiver visível
+                    
+            except TimeoutException:
+                print("-> Timeout: 'Load More' button not found after waiting. Assuming all products loaded.")
+                break # Sai do loop se o botão não aparecer mais
+            except NoSuchElementException:
+                print("-> 'Load More' element not present. Assuming all products loaded.")
+                break
+            except ElementClickInterceptedException:
+                print("-> Click intercepted, scrolling to button.")
+                # Tentar rolar para o elemento e clicar novamente (útil para banners/popups)
+                driver.execute_script("arguments[0].scrollIntoView(true);", load_more_button)
+                time.sleep(0.5)
+                try:
+                    load_more_button.click()
+                    time.sleep(1.5)
+                except:
+                    print("-> Failed to click after scroll. Exiting loop.")
+                    break
+
+
+        print("-> Full category page content successfully loaded.")
+        return driver.page_source
+        
+    except Exception as e:
+        print(f"ERROR: Failed to load full category page. Details: {e}")
+        return None
+    finally:
+        if driver:
+            driver.quit()
+
 def clean_text(text):
     """Removes excess whitespace, newlines, and replaces them with a single space."""
     if not text:
         return ""
-    # 1. Replace all newlines and multiple spaces with a single space
     cleaned = re.sub(r'\s+', ' ', text)
-    # 2. Strip leading/trailing spaces again just to be safe
     return cleaned.strip()
 
 def extract_product_links(html_content):
     """
     Parses the category HTML and extracts the full URLs for individual products.
-    The selector looks for: <a class="link product-link" href="...>
+    The selector looks for: <a class="link product-link" href="...> and ignore links with the word "set"
     """
     if not html_content:
         return []
@@ -92,23 +157,25 @@ def extract_product_links(html_content):
     soup = BeautifulSoup(html_content, 'html.parser')
     product_links = []
     
+    EXCLUSION_KEYWORDS = ["set", "collection"]
+
     # Find all <a> tags with the specific class for product links
     link_tags = soup.find_all('a', class_='link product-link') 
     
     for tag in link_tags:
-        # Get the relative link from the 'href' attribute
         relative_link = tag.get('href')
-        
         if relative_link:
-            # Construct the full URL using the BASE_URL
+            lower_link = relative_link.lower() # To ensure that it works
+            should_exclude = any(keyword in lower_link for keyword in EXCLUSION_KEYWORDS)
+            if should_exclude: 
+                print(f"-> Skipping set/collection link: {relative_link}")
+                continue
             full_url = BASE_URL + relative_link
             product_links.append(full_url)
             
-    # Use set() to ensure no duplicate links and convert back to list
     return list(set(product_links))
 
 
-# --- 3. Parse and Extract Data ---
 def parse_content(html_content):
     """Parses the HTML and extracts the product data."""
     if not html_content:
@@ -241,52 +308,42 @@ def parse_content(html_content):
         
     return product_data
 
-# --- 5. Main Execution Loop ---
+# --- Main Execution Loop ---
 if __name__ == "__main__":
     
-    # 1. Fetch the CATEGORY Page to get the list of products
-    category_html = fetch_page(CATEGORY_URL)
+    # Fetch the CATEGORY Page to get the list of products
+    category_html = get_full_category_html_with_js(CATEGORY_URL)
     
     all_product_data = [] # List to store all scraped results
 
     if category_html:
-        # 2. Extract all individual product URLs from the category page
         product_urls = extract_product_links(category_html)
         
         print(f"\n--- Starting Scrape ---")
         print(f"-> Found {len(product_urls)} unique products to scrape.")
         
-        # 3. Loop through each product URL and scrape the details
         for i, url in enumerate(product_urls):
             print(f"\n--- SCRAPING PRODUCT {i+1} of {len(product_urls)} ---")
-            
-            # 4. Fetch the individual product page (First attempt: standard requests)
+
             product_html = fetch_page(url)
-            results = {} # Initialize results here
+            results = {} 
             
             if product_html:
-                # 5. Parse and extract data (All fields, including a potentially empty description)
                 results = parse_content(product_html)
                 results['Source_URL'] = url
                 
-                # --- FALLBACK LOGIC: Check Description and Use Selenium if needed ---
-                # Check if Description is empty or failed
+                # --- FALLBACK LOGIC: Check Description and Use Selenium if needed, check if Description is empty or failed ---
                 is_description_empty = not results.get('Description') or \
                                        results.get('Description') == "" or \
                                        results.get('Description') == "Description Not Found"
                 
                 if is_description_empty:
                     print("-> Description empty or not found. Activating JS Fallback (Selenium)...")
-                    
-                    # 6. Fetch the page again, this time with Selenium/JS
                     js_html = fetch_page_with_js(url)
                     
                     if js_html:
-                        # 7. Re-parse ONLY the description field from the JS-rendered HTML
                         js_soup = BeautifulSoup(js_html, 'html.parser')
-                        
                         try:
-                            # Re-attempt the robust description extraction
                             description_div = js_soup.find('div', class_='overview-description-substring')
                             if description_div:
                                 raw_description = description_div.text 
@@ -303,30 +360,30 @@ if __name__ == "__main__":
                 all_product_data.append(results)
                 
                 # Print results for immediate feedback
-                print(f"   Name: {results.get('Name')}")
+                """print(f"   Name: {results.get('Name')}")
                 print(f"   Product Type: {results.get('Product Type')}")
                 print(f"   Price: {results.get('Price')}")
                 print(f"   Size (ml): {results.get('Size (ml)')}")
-                # Print the description, truncated to 80 chars
                 description_snippet = results.get('Description')
                 if description_snippet and len(description_snippet) > 180:
                      description_snippet = description_snippet[:180] + "..."
                 print(f"   Description: {description_snippet}")
-                print(f"   Ingredients: {results.get('Ingredients')}") 
+                print(f"   Ingredients: {results.get('Ingredients')[:80]}...") 
                 print(f"   Target: {results.get('Target')}")
-                print(f"   Suited to: {results.get('Skin Type')}")
+                print(f"   Suited to: {results.get('Skin Type')}")"""
                 
-    
-    # 6. Final summary and output
     print("\n--- FINAL SUMMARY ---")
     
     if all_product_data:
         print(f"Successfully scraped data for {len(all_product_data)} products.")
         
-        # OPTIONAL: Save the results to a JSON file (recommended for larger scrapes)
-        # with open('ordinary_products.json', 'w', encoding='utf-8') as f:
-        #     json.dump(all_product_data, f, ensure_ascii=False, indent=4)
-        # print("Data saved to ordinary_products.json")
+        filename = 'ordinary_products_full.json'
+        try:
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(all_product_data, f, ensure_ascii=False, indent=4)
+            print(f"Data saved successfully to **{filename}**.")
+        except Exception as e:
+            print(f"ERROR: Could not save data to JSON. Details: {e}")
     else:
         print("No products were scraped. Check if the CATEGORY_URL is correct.")
         
