@@ -1,4 +1,5 @@
 import time
+import requests
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import WebDriverException
@@ -44,58 +45,127 @@ def fetch_page(url):
 
     return html_content
 
+def fetch_static_html(url: str) -> str | None:
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        response = requests.get(url, headers=headers, timeout=5) 
+        response.raise_for_status() 
+        return response.text
+    except requests.exceptions.RequestException as e:
+        # print(f"Failed to fetch static content for {url}. Details: {e}")
+        return None
+
 def extract_product_links(html_content: str) -> list[str]:
     if not html_content:
         return []
 
-    #print(" Starting data extraction ...")
     soup = BeautifulSoup(html_content, 'html.parser')
     product_links = []
     
-    EXCLUSION_KEYWORDS = ["bunble", "kit", "collection"]
+    EXCLUSION_KEYWORDS = ["bundle", "kit", "collection"]
 
     link_tags = soup.find_all('a', class_='product-card__link') 
     
-    print(f"   -> Found {len(link_tags)} potential link tags.")
-    
     for tag in link_tags:
         relative_link = tag.get('href')
-
-        #print(f" CHECKING LINK: {relative_link}")
         
         if relative_link and relative_link.startswith('/products/'): 
 
             clean_link = relative_link.split('?')[0]
-            
             lower_link = clean_link.lower()
             should_exclude = any(keyword in lower_link for keyword in EXCLUSION_KEYWORDS)
             
             if should_exclude: 
-                print(f"   -> SKIPPING (Excluded): {relative_link}")
+                #print(f"   -> SKIPPING (Excluded): {relative_link}")
                 continue
                 
             full_url = BASE_URL + relative_link
-            
             product_links.append(full_url)
             
-    unique_links = list(set(product_links))
-    return unique_links
+    return list(set(product_links))
+
+def parse_content(html_content: str, url: str) -> dict:
+    """Parses the HTML and extracts the product data."""
+
+    if not html_content:
+        return
+
+    soup = BeautifulSoup(html_content, 'html.parser')
+    product_data = {'URL': url}
+
+    # Extracting the Product Name
+    try:
+        name_tag = soup.find('h1', class_='product__title')
+        if name_tag:
+            product_data['Name'] = name_tag.text.strip()
+        else:
+            product_data['Name'] = "Name Not Found"
+            
+    except Exception as e:
+        product_data['Name'] = f"Error extracting Name: {e}"
+    
+    # Extracting the Price
+    try:
+        price_tag = soup.find('div', class_='price__regular')
+        if price_tag:
+            all_spans = price_tag.find_all('span')
+            price_span = all_spans[-1]
+            if price_span:
+                product_data['Price'] = price_span.text.strip()
+            else:
+                product_data['Price'] = "Product Price Not Found"
+        else:
+            product_data['Price'] = "Price Not Found (Main Div)"
+    except Exception:
+        product_data['Price'] = "Price Not Found"
+
+    return product_data
 
 if __name__ == "__main__":
-    raw_html = fetch_page(NEW_URL)
+    all_extracted_links = set()  
+    page_num = 1
     
-    extracted_links = []
+    while True:
+        current_url = f"{NEW_URL}?page={page_num}"
+        print(f"\n Scraping PAGE {page_num}: {current_url}")
+
+        raw_html = fetch_page(current_url)
+
+        if raw_html:
+            new_links = extract_product_links(raw_html)
+            if not new_links:
+                print(f"!!! Page {page_num} returned 0 new links. Assuming END OF COLLECTION.")
+                break 
+
+            initial_count = len(all_extracted_links)
+            all_extracted_links.update(new_links)
+            added_count = len(all_extracted_links) - initial_count
+
+            page_num += 1
+            
+        else:
+            print("!!! Failed to fetch HTML content. Stopping the process.")
+            break
+            
+    final_products_data = []
+
+    sorted_urls = sorted(list(all_extracted_links)) 
     
-    if raw_html:
-        extracted_links = extract_product_links(raw_html)
-    else:
-        print(" Skipping extraction because no HTML content was fetched.")
+    for i, url in enumerate(sorted_urls):
+        print(f"[{i + 1}/{len(sorted_urls)}] Processing: {url}")
+        
+        product_html = fetch_static_html(url) 
+        
+        if product_html:
+            product_details = parse_content(product_html, url)
+            final_products_data.append(product_details)
+            print(f" Name: {product_details.get('Name')}")
+            print(f" Price: {product_details.get('Price')}")
+        else:
+            print("[FAIL] Could not fetch product HTML.")
 
-    print("\n" + "=" * 50)
-    print(f"FINAL RESULT: {len(extracted_links)} Unique Product Links Extracted:")
-    print("=" * 50)
+    print("\n" + "=" * 60)
+    print(f"FINAL RESULT: {len(final_products_data)} Products Successfully Parsed")
+    print("=" * 60)
 
-    for link in extracted_links:
-        print(f"-> {link}")
-
-    print("=" * 50)
+    print("Script finished.")
