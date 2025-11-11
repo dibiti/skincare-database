@@ -4,6 +4,7 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import WebDriverException
 from bs4 import BeautifulSoup
+import re
 
 BASE_URL = "https://haruharuwonder.com"
 NEW_URL = BASE_URL + "/collections/all"
@@ -84,6 +85,14 @@ def extract_product_links(html_content: str) -> list[str]:
             
     return list(set(product_links))
 
+def clean_text(text):
+    """Removes excess whitespace, newlines, and replaces them with a single space."""
+    if not text:
+        return ""
+    cleaned = re.sub(r'\s+', ' ', text)
+    return cleaned.strip()
+
+
 def parse_content(html_content: str, url: str) -> dict:
     """Parses the HTML and extracts the product data."""
 
@@ -94,10 +103,22 @@ def parse_content(html_content: str, url: str) -> dict:
     product_data = {'URL': url}
 
     # Extracting the Product Name
+    product_prefix = ""
+    try:
+        prefix_tag = soup.find('p', class_='product__text--link')
+        if prefix_tag:
+            product_prefix = clean_text(prefix_tag.text)
+            if product_prefix:
+                product_prefix += " "
+                
+    except Exception as e:
+        print(f"Error extracting Product Prefix: {e}")
+
     try:
         name_tag = soup.find('h1', class_='product__title')
         if name_tag:
-            product_data['Name'] = name_tag.text.strip()
+            main_name = clean_text(name_tag.text)
+            product_data['Name'] = product_prefix + main_name
         else:
             product_data['Name'] = "Name Not Found"
             
@@ -111,13 +132,49 @@ def parse_content(html_content: str, url: str) -> dict:
             all_spans = price_tag.find_all('span')
             price_span = all_spans[-1]
             if price_span:
-                product_data['Price'] = price_span.text.strip()
+                product_data['Price'] = clean_text(price_span.text)
             else:
                 product_data['Price'] = "Product Price Not Found"
         else:
             product_data['Price'] = "Price Not Found (Main Div)"
     except Exception:
         product_data['Price'] = "Price Not Found"
+
+    # Extracting the Available Sizes
+    try:
+        size_swatches = soup.find_all('label', class_='product__swatch')
+        available_sizes = []
+
+        for swatch in size_swatches:
+            size = swatch.get('title') 
+        
+            if not size:
+                span_tag = swatch.find('span')
+                if span_tag:
+                    size = span_tag.text.strip()
+        
+            if size:
+                available_sizes.append(size)
+            
+            if available_sizes:
+                product_data['Sizes'] =", ".join(sorted(list(set(available_sizes))))
+            else:
+                product_data['Sizes'] = "Single Size / Not Found"
+
+    except Exception as e:
+        product_data['Sizes'] = f"Error extracting Sizes: {e}"
+
+    try:
+        ingredients_tag = soup.find('span', class_='metafield-multi_line_text_field')
+        
+        if ingredients_tag:
+            ingredients_list = clean_text(ingredients_tag.text)
+            product_data['Ingredients'] = ingredients_list
+        else:
+            product_data['Ingredients'] = "Ingredients Not Found"
+            
+    except Exception as e:
+        product_data['Ingredients'] = f"Error extracting Ingredients: {e}"
 
     return product_data
 
@@ -161,6 +218,9 @@ if __name__ == "__main__":
             final_products_data.append(product_details)
             print(f" Name: {product_details.get('Name')}")
             print(f" Price: {product_details.get('Price')}")
+            print(f" Sizes: {product_details.get('Sizes')}")
+            print(f" Ingredients: {product_details.get('Ingredients')}")
+
         else:
             print("[FAIL] Could not fetch product HTML.")
 
