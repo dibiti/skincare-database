@@ -5,6 +5,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import WebDriverException
 from bs4 import BeautifulSoup
 import re
+import json
 
 BASE_URL = "https://haruharuwonder.com"
 NEW_URL = BASE_URL + "/collections/all"
@@ -92,6 +93,38 @@ def clean_text(text):
     cleaned = re.sub(r'\s+', ' ', text)
     return cleaned.strip()
 
+def extract_product_type(product_name: str) -> str:
+   
+    if not product_name:
+        return "Unknown"
+        
+    normalized_name = product_name.lower()
+    
+    PRODUCT_TYPE_MAP = {
+        "cleansing balm": "Cleansing Balm",
+        "cleansing oil": "Cleansing Oil",
+        "gel serum": "Serum",
+        "serum": "Serum",
+        "essence": "Essence",
+        "cream": "Cream",
+        "mask": "Mask",
+        "toner": "Toner",
+        "mist": "Mist",
+        "ampoule": "Ampoule",
+        "gel": "Gel",
+        "cleanser": "Cleanser",
+        "oil": "Oil",
+        "lotion": "Lotion",
+        "eye cream": "Eye Cream",
+        "sunscreen": "Sunscreen",
+        "nail cream": "Nail Crea,"
+    }
+
+    for keyword, product_type in PRODUCT_TYPE_MAP.items():
+        if keyword in normalized_name:
+            return product_type
+            
+    return "Others / Unclassified"
 
 def parse_content(html_content: str, url: str) -> dict:
     """Parses the HTML and extracts the product data."""
@@ -100,9 +133,9 @@ def parse_content(html_content: str, url: str) -> dict:
         return
 
     soup = BeautifulSoup(html_content, 'html.parser')
-    product_data = {'URL': url}
+    product_data = {'Source_URL': url}
 
-    # Extracting the Product Name
+    # Extracting the Product Name and Product Type
     product_prefix = ""
     try:
         prefix_tag = soup.find('p', class_='product__text--link')
@@ -119,11 +152,14 @@ def parse_content(html_content: str, url: str) -> dict:
         if name_tag:
             main_name = clean_text(name_tag.text)
             product_data['Name'] = product_prefix + main_name
+            product_data['Product Type'] = extract_product_type(product_data['Name'])
         else:
             product_data['Name'] = "Name Not Found"
+            product_data['Product Type'] = "Not Available"
             
     except Exception as e:
         product_data['Name'] = f"Error extracting Name: {e}"
+        product_data['Product Type'] = "Error"
     
     # Extracting the Price
     try:
@@ -157,13 +193,14 @@ def parse_content(html_content: str, url: str) -> dict:
                 available_sizes.append(size)
             
             if available_sizes:
-                product_data['Sizes'] =", ".join(sorted(list(set(available_sizes))))
+                product_data['Size (ml)'] =", ".join(sorted(list(set(available_sizes))))
             else:
-                product_data['Sizes'] = "Single Size / Not Found"
+                product_data['Size (ml)'] = "Single Size / Not Found"
 
     except Exception as e:
-        product_data['Sizes'] = f"Error extracting Sizes: {e}"
+        product_data['Size (ml)'] = f"Error extracting Sizes: {e}"
 
+    ## Extracting the Ingredients
     try:
         ingredients_tag = soup.find('span', class_='metafield-multi_line_text_field')
         
@@ -175,6 +212,23 @@ def parse_content(html_content: str, url: str) -> dict:
             
     except Exception as e:
         product_data['Ingredients'] = f"Error extracting Ingredients: {e}"
+
+    # Extracting the Product Description (it's a small one)
+    try:
+        custom_title_div = soup.find('div', class_='product-customtitle')
+        
+        if custom_title_div:
+            description_p_tag = custom_title_div.find('p')
+            if description_p_tag:
+                raw_description = description_p_tag.text
+                product_data['Description'] = clean_text(raw_description)
+            else:
+                product_data['Description'] = "P Tag Not Found inside Custom Title"
+        else:
+            product_data['Description'] = "Custom Title Div Not Found"
+            
+    except Exception as e:
+        product_data['Description'] = f"Error extracting Short Description: {e}"
 
     return product_data
 
@@ -217,9 +271,11 @@ if __name__ == "__main__":
             product_details = parse_content(product_html, url)
             final_products_data.append(product_details)
             print(f" Name: {product_details.get('Name')}")
+            print(f" Product Type: {product_details.get('Product Type')}")
             print(f" Price: {product_details.get('Price')}")
-            print(f" Sizes: {product_details.get('Sizes')}")
+            print(f" Size (ml): {product_details.get('Sizes')}")
             print(f" Ingredients: {product_details.get('Ingredients')}")
+            print(f" Description: {product_details.get('Description')}")
 
         else:
             print("[FAIL] Could not fetch product HTML.")
@@ -227,5 +283,18 @@ if __name__ == "__main__":
     print("\n" + "=" * 60)
     print(f"FINAL RESULT: {len(final_products_data)} Products Successfully Parsed")
     print("=" * 60)
+
+    if final_products_data:
+        print(f"Successfully scraped data for {len(final_products_data)} products.")
+        
+        filename = 'haruharu_products_full.json' 
+        try:
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(final_products_data, f, ensure_ascii=False, indent=4)
+            print(f"Data saved successfully to **{filename}**.")
+        except Exception as e:
+            print(f"ERROR: Could not save data to JSON. Details: {e}")
+    else:
+        print("No products were scraped. Check if the website structure or the initial fetching was correct.")
 
     print("Script finished.")
