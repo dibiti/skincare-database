@@ -1,25 +1,56 @@
 import requests
 from bs4 import BeautifulSoup
 import time
-import re
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 CATEGORY_URL = "https://www.cerave.com/skincare" 
 BASE_URL = "https://www.cerave.com"
 
-def fetch_page(url):
-    print(f" Fetching URL: {url}")
+def scrape_all_products_with_selenium(url):
+    #print("Starting Selenium Scraper...")
+    print(f"Opening URL: {url}")
+    
+    service = Service() 
+    options = webdriver.ChromeOptions()
+    options.add_argument('--headless') 
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
+    
     try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-        time.sleep(2) 
-        response = requests.get(url, headers=headers, timeout=15)
-        response.raise_for_status() # Check for HTTP errors (4xx or 5xx)
-        return response.text
+        driver = webdriver.Chrome(service=service, options=options)
+        driver.get(url)
         
-    except requests.exceptions.RequestException as e:
-        print(f"ERROR: Could not fetch the page. Details: {e}")
+        wait = WebDriverWait(driver, 15)
+
+        while True:
+            try:
+                load_more_button = wait.until(
+                    EC.element_to_be_clickable((By.CLASS_NAME, 'load-more-results__cta-btn'))
+                )
+                
+                #print("   -> Found 'View 12 More' button. Clicking...")
+                driver.execute_script("arguments[0].click();", load_more_button)
+                time.sleep(3) 
+                
+            except Exception:
+                #print("   -> 'View 12 More' button not found or disappeared. All products loaded.")
+                break
+
+        final_html = driver.page_source
+        return final_html
+        
+    except Exception as e:
+        print(f"AN ERROR OCCURRED during Selenium process: {e}")
         return None
+        
+    finally:
+        if 'driver' in locals() and driver:
+            driver.quit()
 
 def extract_product_links(html_content):
     if not html_content:
@@ -45,7 +76,7 @@ def extract_product_links(html_content):
 
 if __name__ == "__main__":
     
-    category_html = fetch_page(CATEGORY_URL)
+    category_html = scrape_all_products_with_selenium(CATEGORY_URL)
     
     product_urls = [] 
 
