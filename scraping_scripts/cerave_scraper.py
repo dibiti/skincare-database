@@ -137,6 +137,44 @@ def parse_content(html_content):
     except Exception as e:
         product_data['Description'] = f"Error extracting Description: {e}"
 
+    # Extracting the Ingredients
+    try:
+        ingredients_div = soup.find('div', class_='richtext keyIngredients-details__content')
+        if ingredients_div:
+            
+            for a_tag in ingredients_div.find_all('a'):
+                a_tag.unwrap() 
+
+            for unwanted_tag in ingredients_div.find_all(lambda tag: tag.name in ['p', 'em'] and ('refilled products in the store' in tag.text or 'Please be aware that ingredient lists' in tag.text or 'Code F.I.L.' in tag.text)):
+                unwanted_tag.decompose()
+            
+            raw_text = ingredients_div.get_text(separator=' ').strip()
+            cleaned_text = raw_text
+            cleaned_text = re.sub(r'^\s*(INGREDIENTS?:?\s*)+\s*[\d\s-]*\s*(INGREDIENTS?:?\s*)*', '', cleaned_text, flags=re.IGNORECASE).strip()
+            cleaned_text = re.sub(r'\s*\(Code\s*F\.I\.L\..*?\)', '', cleaned_text).strip()
+            cleaned_text = re.sub(r'(ACTIVE|INACTIVE)\s*INGREDIENTS?:?\s*', '', cleaned_text, flags=re.IGNORECASE).strip()
+
+            cleaned_text = re.sub(
+                r'\s*\([^)]*\d+\.\d*\%[^)]*\)\s*', 
+                '', cleaned_text, flags=re.IGNORECASE).strip() 
+                
+            cleaned_text = re.sub(r'\s*\([^)]*\)\s*', ', ', cleaned_text).strip()
+            cleaned_text = re.sub(r'(Sunscreen|SUNSCREEN|\.\.+)', '', cleaned_text, flags=re.IGNORECASE).strip()
+            cleaned_text = re.sub(r'(\d\%|[a-z])\s+([A-Z])', r'\1, \2', cleaned_text)
+            cleaned_text = re.sub(r'[\s\n]*•[\s\n]*', ', ', cleaned_text)
+            cleaned_text = re.sub(r'\s{2,}', ' ', cleaned_text)
+            cleaned_text = re.sub(r'\n', ', ', cleaned_text)
+            cleaned_text = re.sub(r'\s*,\s*', ', ', cleaned_text)
+            cleaned_text = cleaned_text.strip(', ')
+            
+            product_data['Ingredients'] = clean_text(cleaned_text)
+            
+        else:
+            product_data['Ingredients'] = "Ingredients Div Not Found"
+            
+    except Exception as e:
+        product_data['Ingredients'] = f"Error extracting Ingredients: {e}"
+
     return product_data
 
 if __name__ == "__main__":
@@ -162,9 +200,10 @@ if __name__ == "__main__":
                     product_data = parse_content(product_html)
                     extracted_data.append(product_data)
                         
-                    print(f"   Name: {product_data.get('Name')}")
-                    print(f"   Price: {product_data.get('Price')}")
-                    print(f" Description: {product_data.get('Description')}")
+                    #print(f" Name: {product_data.get('Name')}")
+                    #print(f" Price: {product_data.get('Price')}")
+                    print(f" Ingredients: {product_data.get('Ingredients')}")
+                    #print(f" Description: {product_data.get('Description')}")
                     
     else:
         print(" No products were scraped. Check if the website structure or the initial fetching was correct.")
