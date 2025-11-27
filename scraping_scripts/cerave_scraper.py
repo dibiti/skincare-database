@@ -7,6 +7,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import re
+import json
 
 CATEGORY_URL = "https://www.cerave.com/skincare" 
 BASE_URL = "https://www.cerave.com"
@@ -114,6 +115,23 @@ def parse_content(html_content):
     except Exception as e:
         product_data['Name'] = f"Error extracting Name: {e}"
     
+    # Extracting the Product Type
+    try:
+        active_counter = soup.find(class_='productHowTo-when-steps-step__counter--active')
+        product_type = "Type Not Found"
+
+        if active_counter:
+            list_item = active_counter.find_parent('li')
+            if list_item:
+                title_tag = list_item.find(class_='productHowTo-when-steps-step__title')
+                if title_tag:
+                    product_type = clean_text(title_tag.text)
+                
+        product_data['Product Type'] = product_type
+            
+    except Exception as e:
+        product_data['Product Type'] = f"Error extracting Product Type: {e}"
+
     # Extracting the Price
     try:
         price_tag = soup.find('p', class_='product-details__price')
@@ -125,6 +143,10 @@ def parse_content(html_content):
             
     except Exception as e:
         product_data['Price'] = f"Error extracting Price: {e}"
+
+    # Extracting the Available Sizes
+    # Since the website don't have this informations
+    product_data['Size (ml)'] = "Size Not Found"
 
     # Extracting the Product Description
     try:
@@ -193,20 +215,34 @@ if __name__ == "__main__":
         
         if product_urls:
             for i, url in enumerate(product_urls):
-                print(f" -> Processing Product {i+1}/{len(product_urls)}: {url}")
+                #print(f" -> Processing Product {i+1}/{len(product_urls)}: {url}")
                 product_html = scrape_product_details(url) 
                 
                 if product_html:
                     product_data = parse_content(product_html)
                     extracted_data.append(product_data)
-                        
+                    product_data['Source_URL'] = url    
                     #print(f" Name: {product_data.get('Name')}")
+                    #print(f" Product Type: {product_data.get('Product Type')}")
                     #print(f" Price: {product_data.get('Price')}")
-                    print(f" Ingredients: {product_data.get('Ingredients')}")
+                    #print(f" Ingredients: {product_data.get('Ingredients')}")
                     #print(f" Description: {product_data.get('Description')}")
                     
-    else:
-        print(" No products were scraped. Check if the website structure or the initial fetching was correct.")
+        else:
+            print(" No products were scraped. Check if the website structure or the initial fetching was correct.")
         
+        if extracted_data:
+            print(f"Successfully scraped data for {len(extracted_data)} products.")
+            
+            filename = 'cerave_products.json' 
+            try:
+                with open(filename, 'w', encoding='utf-8') as f:
+                    json.dump(extracted_data, f, ensure_ascii=False, indent=4)
+                print(f"Data saved successfully to **{filename}**.")
+            except Exception as e:
+                print(f"ERROR: Could not save data to JSON. Details: {e}")
+        else:
+            print("No data available to save.")
+
     print("=" * 60)
     print("\nScript finished.")
