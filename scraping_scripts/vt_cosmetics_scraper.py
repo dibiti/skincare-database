@@ -6,7 +6,7 @@ from selenium.common.exceptions import WebDriverException
 from bs4 import BeautifulSoup
 import re
 import json
-from typing import List
+from typing import List, Set
 
 BASE_URL = "https://globalvt-cosmetics.com"
 NEW_URL = BASE_URL + "/collections/all"
@@ -20,12 +20,12 @@ def fetch_page(url):
     driver = None 
     html_content = None
     
-    print(f"Initializing Chrome Driver to access: {url}")
+    #print(f"Initializing Chrome Driver to access: {url}")
     
     try:
         driver = webdriver.Chrome(options=chrome_options)
         driver.get(url)
-        print("Waiting for the page to fully load ...")
+        #print("Waiting for the page to fully load ...")
         time.sleep(7) 
         
         page_title = driver.title
@@ -48,6 +48,22 @@ def fetch_page(url):
 
     return html_content
 
+def fetch_static_html(url: str) -> str | None:
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        response = requests.get(url, headers=headers, timeout=5) 
+        response.raise_for_status() 
+        return response.text
+    except requests.exceptions.RequestException as e:
+        # print(f"Failed to fetch static content for {url}. Details: {e}")
+        return None
+
+def clean_text(text):
+    if not text:
+        return ""
+    cleaned = re.sub(r'\s+', ' ', text)
+    return cleaned.strip()
+
 def extract_product_links(html_content: str | None) -> List[str]:
     if not html_content:
         return []
@@ -55,7 +71,7 @@ def extract_product_links(html_content: str | None) -> List[str]:
     soup = BeautifulSoup(html_content, 'html.parser')
     product_links: List[str] = [] #Using Type Hinting
     
-    EXCLUSION_KEYWORDS = ["bundle", "kit", "collection"]
+    EXCLUSION_KEYWORDS = ["bundle", "kit", "collection", "set", "duo"]
     link_tags = soup.find_all('a', class_='prgrid-name-style') 
 
     for tag in link_tags:
@@ -75,14 +91,78 @@ def extract_product_links(html_content: str | None) -> List[str]:
             
     return list(set(product_links))
 
-if __name__ == "__main__":
-    html_source = fetch_page(NEW_URL)
-    
-    if html_source:
-        all_product_urls = extract_product_links(html_source)
-        if all_product_urls:
-            print("\n Example of Extracted Links:")
-            for url in all_product_urls:
-                print(f" - {url}")
+def parse_content(html_content: str, url: str) -> dict:
+    if not html_content:
+        return {'Source_URL': url, 'Name': 'HTML Content Missing'}
+
+    soup = BeautifulSoup(html_content, 'html.parser')
+    product_data = {'Source_URL': url}
+
+    # Extracting the Product Name
+    try:
+        name_tag = soup.find('h2', class_='h1')
+        
+        if name_tag:
+            product_data['Name'] = clean_text(name_tag.text)
         else:
-            print("\nNo product links were extracted. Check the HTML structure.")    
+            product_data['Name'] = "Name Not Found"
+            
+    except Exception as e:
+        product_data['Name'] = f"Error extracting Name: {e}"
+
+    return product_data
+
+if __name__ == "__main__":
+    all_extracted_links: Set[str] = set() 
+    page_num = 1
+
+    while True:
+        current_url = f"{NEW_URL}?page={page_num}"
+        print(f"\n Scraping PAGE {page_num}: {current_url}")
+
+        raw_html = fetch_page(current_url)
+
+        if raw_html:
+            new_links = extract_product_links(raw_html)
+            if not new_links:
+                print(f"!!! Page {page_num} returned 0 new links. Assuming END OF COLLECTION.")
+                break 
+
+            initial_count = len(all_extracted_links)
+            all_extracted_links.update(new_links)
+            added_count = len(all_extracted_links) - initial_count
+            
+            print(f" -> Found {len(new_links)} links on this page. Added {added_count} unique links.")
+
+            page_num += 1
+            
+        else:
+            print("!!! Failed to fetch HTML content. Stopping the process.")
+            break
+    
+        final_products_data = []
+
+    sorted_urls = sorted(list(all_extracted_links)) 
+    
+    for i, url in enumerate(sorted_urls):
+        print(f"[{i + 1}/{len(sorted_urls)}] Processing: {url}")
+        
+        product_html = fetch_static_html(url) 
+        
+        if product_html:
+            product_details = parse_content(product_html, url)
+            final_products_data.append(product_details)
+            print(f" Name: {product_details.get('Name')}")
+        else:
+            print("[FAIL] Could not fetch product HTML.")
+
+    final_count = len(all_extracted_links)
+    print("\n" + "=" * 60)
+    print(f"LINK EXTRACTION COMPLETE: Found a total of {final_count} UNIQUE Product URLs.")
+    print("=" * 60)
+
+    if final_count > 0:
+        for url in sorted(list(all_extracted_links)): 
+            print(f" - {url}")
+            
+    print("\nScript finished.")
