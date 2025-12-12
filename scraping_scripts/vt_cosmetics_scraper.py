@@ -31,9 +31,9 @@ def fetch_page(url):
         page_title = driver.title
         html_content = driver.page_source
 
-        print("-" * 50)
-        print(f"Connection successful!")
-        print("-" * 50)
+        #print("-" * 50)
+        #print(f"Connection successful!")
+        #print("-" * 50)
 
     except WebDriverException as e:
         print("-" * 70)
@@ -110,6 +110,34 @@ def parse_content(html_content: str, url: str) -> dict:
     except Exception as e:
         product_data['Name'] = f"Error extracting Name: {e}"
 
+    try:
+        modal_container = soup.find('div', id='ingreModal')
+        
+        if modal_container:
+            ingredients_content_div = modal_container.find('div', class_='metafield-rich_text_field')
+            
+            if ingredients_content_div:
+                ingredients_text = ingredients_content_div.get_text(strip=True)
+                product_data['Ingredients'] = ingredients_text
+            else:
+                product_data['Ingredients'] = 'Ingredients Not Found (metafield-rich_text_field missing inside modal)'
+        
+    except Exception as e:
+        product_data['Ingredients'] = f"Error extracting Ingredients: {e}"
+
+    # Extracting the Product Description
+    try:
+        description_tag = soup.find('div', class_='metafield-rich_text_field')
+        
+        if description_tag:
+            description_list = clean_text(description_tag.text)
+            product_data['Description'] = description_list
+        else:
+            product_data['Description'] = "Description Not Found"
+            
+    except Exception as e:
+        product_data['Description'] = f"Error extracting Description: {e}"
+
     return product_data
 
 if __name__ == "__main__":
@@ -132,7 +160,7 @@ if __name__ == "__main__":
             all_extracted_links.update(new_links)
             added_count = len(all_extracted_links) - initial_count
             
-            print(f" -> Found {len(new_links)} links on this page. Added {added_count} unique links.")
+            #print(f" -> Found {len(new_links)} links on this page. Added {added_count} unique links.")
 
             page_num += 1
             
@@ -153,6 +181,8 @@ if __name__ == "__main__":
             product_details = parse_content(product_html, url)
             final_products_data.append(product_details)
             print(f" Name: {product_details.get('Name')}")
+            print(f" Ingredients: {product_details.get('Ingredients')}")
+            print(f" Description: {product_details.get('Description')}")
         else:
             print("[FAIL] Could not fetch product HTML.")
 
@@ -160,9 +190,5 @@ if __name__ == "__main__":
     print("\n" + "=" * 60)
     print(f"LINK EXTRACTION COMPLETE: Found a total of {final_count} UNIQUE Product URLs.")
     print("=" * 60)
-
-    if final_count > 0:
-        for url in sorted(list(all_extracted_links)): 
-            print(f" - {url}")
             
     print("\nScript finished.")
