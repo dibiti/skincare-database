@@ -273,7 +273,7 @@ if __name__ == "__main__":
             print(f" Name: {product_details.get('Name')}")
             print(f" Product Type: {product_details.get('Product Type')}")
             print(f" Price: {product_details.get('Price')}")
-            print(f" Size (ml): {product_details.get('Sizes')}")
+            print(f" Size (ml): {product_details.get('Size (ml)')}")
             print(f" Ingredients: {product_details.get('Ingredients')}")
             print(f" Description: {product_details.get('Description')}")
 

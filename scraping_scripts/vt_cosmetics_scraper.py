@@ -110,6 +110,66 @@ def parse_content(html_content: str, url: str) -> dict:
     except Exception as e:
         product_data['Name'] = f"Error extracting Name: {e}"
 
+    # Extracting the Price
+    try:
+        price_container = soup.find('div', class_='price__container')
+        product_data['Price_Regular'] = "Price Not Found"
+
+        if price_container:
+            
+            # 1. ATTEMPT TO FIND THE STRIKE-THROUGH PRICE (Original price when on sale)
+            # This corresponds to your requested element: <s>...$30.72...</s>
+            original_price_tag = price_container.find('s', class_='price-item price-item--regular')
+            
+            if original_price_tag:
+                # If found, this is the original regular price.
+                product_data['Price_Regular'] = clean_text(original_price_tag.text)
+            
+            else:
+                # 2. IF NO SALE (No strike-through price found):
+                # The regular price is the only one visible inside price__regular.
+                regular_price_tag = price_container.find('div', class_='price__regular')
+                
+                if regular_price_tag:
+                    # Find the price span inside the regular price div
+                    regular_span = regular_price_tag.find('span', class_='price-item--regular')
+                    
+                    if regular_span:
+                        product_data['Price_Regular'] = clean_text(regular_span.text)
+                
+    except Exception as e:
+        product_data['Price_Regular'] = f"Error extracting Price_Regular: {e}"
+
+    # Extracting the Available Sizes
+    try:
+        size_tag = soup.find('p', class_='product__text')
+        
+        raw_size = size_tag.text if size_tag else None
+        product_data['Size (ml)'] = "Size Not Found" 
+
+        if raw_size:
+            cleaned_size = clean_text(raw_size)
+            count_terms = r'\b(pcs|ea|sheets|pack)\b' # Added 'pack' just in case
+            separator = r'[/*]'
+
+            if re.search(f'{separator}.*{count_terms}', cleaned_size, re.IGNORECASE):
+                product_data['Size (ml)'] = cleaned_size
+            
+            elif re.search(separator, cleaned_size):
+                
+                match = re.search(separator, cleaned_size)
+                if match:
+                    product_data['Size (ml)'] = clean_text(cleaned_size[:match.start()])
+                else:
+                    product_data['Size (ml)'] = cleaned_size
+
+            else:
+                product_data['Size (ml)'] = cleaned_size
+
+    except Exception as e:
+        product_data['Size (ml)'] = f"Error extracting Size: {e}"
+
+    # Extracting the Ingredients
     try:
         modal_container = soup.find('div', id='ingreModal')
         
@@ -181,8 +241,10 @@ if __name__ == "__main__":
             product_details = parse_content(product_html, url)
             final_products_data.append(product_details)
             print(f" Name: {product_details.get('Name')}")
-            print(f" Ingredients: {product_details.get('Ingredients')}")
-            print(f" Description: {product_details.get('Description')}")
+            print(f" Price: {product_details.get('Price_Regular')}")
+            print(f" Size (ml): {product_details.get('Size (ml)')}")
+            #print(f" Ingredients: {product_details.get('Ingredients')}")
+            #print(f" Description: {product_details.get('Description')}")
         else:
             print("[FAIL] Could not fetch product HTML.")
 
