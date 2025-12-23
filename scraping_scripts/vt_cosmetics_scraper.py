@@ -91,6 +91,29 @@ def extract_product_links(html_content: str | None) -> List[str]:
             
     return list(set(product_links))
 
+def extract_product_type(product_name: str) -> str:
+   
+    name_lower = product_name.lower()
+    
+    type_priority = [
+        ("Mask", ["mask", "sheet mask", "hydrogel", "pack"]),
+        ("Eye Care", ["eye cream", "eye serum", "eye patch", "eye mask"]),
+        ("Cleanser", ["cleanser", "foam", "cleansing oil", "cleansing balm"]),
+        ("Sun Care", ["sunscreen", "spf", "sun cream", "sun block"]),
+        ("Treatment / Patch", ["patch", "spot treatment", "acne patch"]),
+        # We put Reedle Shot and Serums lower so they don't override Masks/Patches
+        ("Serum / Essence", ["serum", "essence", "ampoule", "reedle shot", "concentrate"]),
+        ("Moisturizer", ["cream", "lotion", "emulsion", "moisturizer"]),
+        ("Toner", ["toner", "skin", "refresher", "misting"])
+    ]
+
+    for category, keywords in type_priority:
+        if any(keyword in name_lower for keyword in keywords):
+            return category
+
+    # Fallback category
+    return "Skincare / Other"
+
 def parse_content(html_content: str, url: str) -> dict:
     if not html_content:
         return {'Source_URL': url, 'Name': 'HTML Content Missing'}
@@ -103,12 +126,16 @@ def parse_content(html_content: str, url: str) -> dict:
         name_tag = soup.find('h2', class_='h1')
         
         if name_tag:
-            product_data['Name'] = clean_text(name_tag.text)
+            clean_name = clean_text(name_tag.text)
+            product_data['Name'] = clean_name
+            product_data['Product Type'] = extract_product_type(clean_name)
         else:
             product_data['Name'] = "Name Not Found"
+            product_data['Product Type'] = "N/A"
             
     except Exception as e:
         product_data['Name'] = f"Error extracting Name: {e}"
+        product_data['Product Type'] = "Product Type Not Found"
 
     # Extracting the Price
     try:
@@ -116,18 +143,12 @@ def parse_content(html_content: str, url: str) -> dict:
         product_data['Price_Regular'] = "Price Not Found"
 
         if price_container:
-            
-            # 1. ATTEMPT TO FIND THE STRIKE-THROUGH PRICE (Original price when on sale)
-            # This corresponds to your requested element: <s>...$30.72...</s>
             original_price_tag = price_container.find('s', class_='price-item price-item--regular')
             
             if original_price_tag:
-                # If found, this is the original regular price.
                 product_data['Price_Regular'] = clean_text(original_price_tag.text)
             
             else:
-                # 2. IF NO SALE (No strike-through price found):
-                # The regular price is the only one visible inside price__regular.
                 regular_price_tag = price_container.find('div', class_='price__regular')
                 
                 if regular_price_tag:
@@ -240,9 +261,10 @@ if __name__ == "__main__":
         if product_html:
             product_details = parse_content(product_html, url)
             final_products_data.append(product_details)
-            print(f" Name: {product_details.get('Name')}")
-            print(f" Price: {product_details.get('Price_Regular')}")
-            print(f" Size (ml): {product_details.get('Size (ml)')}")
+            #print(f" Name: {product_details.get('Name')}")
+            #print(f" Product Type: {product_details.get('Product Type')}")
+            #print(f" Price: {product_details.get('Price_Regular')}")
+            #print(f" Size (ml): {product_details.get('Size (ml)')}")
             #print(f" Ingredients: {product_details.get('Ingredients')}")
             #print(f" Description: {product_details.get('Description')}")
         else:
@@ -252,5 +274,18 @@ if __name__ == "__main__":
     print("\n" + "=" * 60)
     print(f"LINK EXTRACTION COMPLETE: Found a total of {final_count} UNIQUE Product URLs.")
     print("=" * 60)
+
+    if final_products_data:
+        print(f"Successfully scraped data for {len(final_products_data)} products.")
+        
+        filename = 'vtcosmetics_products.json' 
+        try:
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(final_products_data, f, ensure_ascii=False, indent=4)
+            print(f"Data saved successfully to **{filename}**.")
+        except Exception as e:
+            print(f"ERROR: Could not save data to JSON. Details: {e}")
+    else:
+        print("No products were scraped. Check if the website structure or the initial fetching was correct.")
             
     print("\nScript finished.")

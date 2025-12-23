@@ -39,6 +39,7 @@ The project is structured to separate the database configuration, fixed data fil
     - **`scrape_ingredients_haruharuwonder.py`**: I have notice that the brand haruharu wonder has a page dedicated a ingredients they use in their products, I decided to make a script to get that information about ingredientes to start populate my table, they are 97 total.
     - **` haruharuwonder_scraper`**: The needed information of all products of the brand, saved in .json file.
     - **` cerave_scraper`**: The needed information of all products of the brand, saved in .json file.
+    - **` vt_cosmetics_scraper`**: The needed information of all products of the brand, saved in .json file.
 - **`.gitignore`**: A file to ignore files and folders that should not be included in Git (like the `data/` folder).
 
 ---
