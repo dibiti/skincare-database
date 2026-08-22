@@ -48,15 +48,22 @@ def fetch_page(url):
 
     return html_content
 
-def fetch_static_html(url: str) -> str | None:
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        response = requests.get(url, headers=headers, timeout=5) 
-        response.raise_for_status() 
-        return response.text
-    except requests.exceptions.RequestException as e:
-        # print(f"Failed to fetch static content for {url}. Details: {e}")
-        return None
+def fetch_static_html(url: str, max_attempts: int = 3) -> str | None:
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+
+    # retry loop: a single slow response should not cost us the product
+    for attempt in range(1, max_attempts + 1):
+        try:
+            response = requests.get(url, headers=headers, timeout=15)
+            response.raise_for_status()
+            return response.text
+        except requests.exceptions.RequestException as e:
+            if attempt < max_attempts:
+                # small pause before retrying, so we don't hammer the server
+                time.sleep(2 * attempt)
+            else:
+                print(f"Failed to fetch static content for {url} after {max_attempts} attempts. Details: {e}")
+    return None
 
 def clean_text(text):
     if not text:

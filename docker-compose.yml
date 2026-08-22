@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    container_name: skincare-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required — copy .env.example to .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required — copy .env.example to .env}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required — copy .env.example to .env}
+    ports:
+      # 5433 on the host to avoid clashing with other local Postgres instances
+      # (e.g. the commodity pipeline project uses 5432).
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+      - skincare_pgdata:/var/lib/postgresql/data
+      # initdb scripts run in alphabetical order, and ONLY when the data volume
+      # is empty (first boot). Schema must run before the seed, hence the 00_ prefix.
+      - ./db_config/schema.sql:/docker-entrypoint-initdb.d/00_schema.sql:ro
+      - ./db_config/01_seed_reference.sql:/docker-entrypoint-initdb.d/01_seed_reference.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  skincare_pgdata:

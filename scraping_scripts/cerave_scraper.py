@@ -1,80 +1,66 @@
 import requests
 from bs4 import BeautifulSoup
 import time
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 import re
 import json
 
-CATEGORY_URL = "https://www.cerave.com/skincare" 
+# NOTE (2026-08): CeraVe redesigned their site. The old category page with the
+# 'load-more-results__cta-btn' button and 'results__card-front' cards is gone,
+# so the Selenium-based catalog crawl stopped finding products (0 results).
+# The new approach reads the sitemap.xml instead: it lists every page on the
+# site, we keep the /skincare/ and /sunscreen/ ones, and parse_content() itself
+# tells us which are real product pages (only those have the 'pdp-heading' h1).
+# Bonus: no Selenium needed anymore — plain requests is enough.
+
+SITEMAP_URL = "https://www.cerave.com/sitemap.xml"
 BASE_URL = "https://www.cerave.com"
 
-def scrape_all_products_with_selenium(url):
-    #print("Starting Selenium Scraper...")
-    print(f"Opening URL: {url}")
-    
-    service = Service() 
-    options = webdriver.ChromeOptions()
-    options.add_argument('--headless') 
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-    options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
-    
-    try:
-        driver = webdriver.Chrome(service=service, options=options)
-        driver.get(url)
-        
-        wait = WebDriverWait(driver, 15)
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36'
+}
 
-        while True:
-            try:
-                load_more_button = wait.until(
-                    EC.element_to_be_clickable((By.CLASS_NAME, 'load-more-results__cta-btn'))
-                )
-                
-                #print("   -> Found 'View 12 More' button. Clicking...")
-                driver.execute_script("arguments[0].click();", load_more_button)
-                time.sleep(3) 
-                
-            except Exception:
-                #print("   -> 'View 12 More' button not found or disappeared. All products loaded.")
-                break
+def fetch_with_retry(url, max_attempts=3, timeout=15):
+    """Fetches a URL, retrying on transient failures so one slow response
+    does not cost us a product."""
+    for attempt in range(1, max_attempts + 1):
+        try:
+            response = requests.get(url, headers=HEADERS, timeout=timeout)
+            response.raise_for_status()
+            return response.text
+        except requests.RequestException as e:
+            if attempt < max_attempts:
+                time.sleep(2 * attempt)
+            else:
+                print(f"ERROR: Could not fetch URL {url} after {max_attempts} attempts: {e}")
+    return None
 
-        final_html = driver.page_source
-        return final_html
-        
-    except Exception as e:
-        print(f"AN ERROR OCCURRED during Selenium process: {e}")
-        return None
-        
-    finally:
-        if 'driver' in locals() and driver:
-            driver.quit()
+def extract_product_links():
+    """Collects candidate product URLs from the sitemap.
 
-def extract_product_links(html_content):
-    if not html_content:
+    The root sitemap.xml may just point to other sitemap files (a 'sitemap
+    index'), so we follow those first, then keep every URL under /skincare/
+    or /sunscreen/. Category pages slip through here — they are filtered out
+    later because they have no 'pdp-heading' when parsed.
+    """
+    xml = fetch_with_retry(SITEMAP_URL)
+    if not xml:
         return []
 
-    soup = BeautifulSoup(html_content, 'html.parser')
-    product_links = []
-    
-    link_tags = soup.find_all('a', class_='results__card-front') 
-    
-    for tag in link_tags:
-        relative_link = tag.get('href')
-        
-        if relative_link:
-            if relative_link.startswith('/'):
-                full_url = BASE_URL + relative_link
-            else:
-                full_url = relative_link
-                
-            product_links.append(full_url)
+    # if this is a sitemap index, follow the child sitemaps (skip video/image ones)
+    child_sitemaps = [
+        loc for loc in re.findall(r'<loc>([^<]+)</loc>', xml)
+        if loc.endswith('sitemap.xml')
+    ]
+    if child_sitemaps:
+        xml = "".join(filter(None, (fetch_with_retry(u) for u in child_sitemaps)))
 
-    return list(set(product_links))
+    urls = re.findall(r'<loc>([^<]+)</loc>', xml)
+    product_links = [
+        u for u in urls
+        if re.search(r'https://www\.cerave\.com/(skincare|sunscreen)/', u)
+    ]
+
+    return sorted(set(product_links))
 
 def clean_text(text):
     """Removes excess whitespace, newlines, and replaces them with a single space."""
@@ -85,16 +71,7 @@ def clean_text(text):
 
 def scrape_product_details(url):
     """Fetches the HTML content for a single product URL using requests."""
-    try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status() 
-        return response.text
-    except requests.RequestException as e:
-        print(f"ERROR: Could not fetch URL {url}: {e}")
-        return None
+    return fetch_with_retry(url)
 
 def parse_content(html_content):
     """Parses the HTML and extracts the product data."""
@@ -200,49 +177,50 @@ def parse_content(html_content):
     return product_data
 
 if __name__ == "__main__":
-    
-    category_html = scrape_all_products_with_selenium(CATEGORY_URL)
-    product_urls = [] 
 
-    if category_html:
-        product_urls = extract_product_links(category_html)
-        
-        print("\n" + "=" * 60)
-        print(f"FINAL RESULT: {len(product_urls)} Products to be Processed")
-        print("=" * 60)
-        
-        extracted_data = []
-        
-        if product_urls:
-            for i, url in enumerate(product_urls):
-                #print(f" -> Processing Product {i+1}/{len(product_urls)}: {url}")
-                product_html = scrape_product_details(url) 
-                
-                if product_html:
-                    product_data = parse_content(product_html)
-                    extracted_data.append(product_data)
-                    product_data['Source_URL'] = url    
-                    #print(f" Name: {product_data.get('Name')}")
-                    #print(f" Product Type: {product_data.get('Product Type')}")
-                    #print(f" Price: {product_data.get('Price')}")
-                    #print(f" Ingredients: {product_data.get('Ingredients')}")
-                    #print(f" Description: {product_data.get('Description')}")
-                    
-        else:
-            print(" No products were scraped. Check if the website structure or the initial fetching was correct.")
-        
-        if extracted_data:
-            print(f"Successfully scraped data for {len(extracted_data)} products.")
-            
-            filename = 'cerave_products.json' 
-            try:
-                with open(filename, 'w', encoding='utf-8') as f:
-                    json.dump(extracted_data, f, ensure_ascii=False, indent=4)
-                print(f"Data saved successfully to **{filename}**.")
-            except Exception as e:
-                print(f"ERROR: Could not save data to JSON. Details: {e}")
-        else:
-            print("No data available to save.")
+    product_urls = extract_product_links()
+
+    print("\n" + "=" * 60)
+    print(f"FINAL RESULT: {len(product_urls)} Candidate URLs to be Processed")
+    print("=" * 60)
+
+    extracted_data = []
+
+    if product_urls:
+        for i, url in enumerate(product_urls):
+            print(f" -> Processing {i+1}/{len(product_urls)}: {url}")
+            product_html = scrape_product_details(url)
+
+            if product_html:
+                product_data = parse_content(product_html)
+
+                # category/landing pages have no 'pdp-heading', so parse_content
+                # returns no name for them — that is how we skip non-products
+                if product_data.get('Name') == "Product Name Not Found":
+                    print("    (not a product page, skipping)")
+                    continue
+
+                product_data['Source_URL'] = url
+                extracted_data.append(product_data)
+
+            # small pause between requests, out of politeness to the server
+            time.sleep(0.5)
+
+    else:
+        print(" No products were scraped. Check if the website structure or the initial fetching was correct.")
+
+    if extracted_data:
+        print(f"Successfully scraped data for {len(extracted_data)} products.")
+
+        filename = 'cerave_products.json'
+        try:
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(extracted_data, f, ensure_ascii=False, indent=4)
+            print(f"Data saved successfully to **{filename}**.")
+        except Exception as e:
+            print(f"ERROR: Could not save data to JSON. Details: {e}")
+    else:
+        print("No data available to save.")
 
     print("=" * 60)
     print("\nScript finished.")

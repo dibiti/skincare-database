@@ -14,6 +14,13 @@ pandas
 # psycopg2-binary: The Python adapter/driver to connect to and interact with PostgreSQL.
 psycopg2-binary
 
+# Browser Automation (needed by all scrapers for JavaScript-heavy pages)
+# selenium: Drives a real Chrome browser to render pages that plain requests cannot.
+selenium
+
+# webdriver-manager: Downloads and manages the right ChromeDriver version automatically.
+webdriver-manager
+
 # Environment Configuration
 # python-dotenv: Helpful for loading environment variables (like your database credentials)
 # from a .env file, keeping sensitive data out of the main code.
