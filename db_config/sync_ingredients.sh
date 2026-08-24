@@ -4,16 +4,21 @@
 # SCRIPT: sync_ingredients.sh
 # PURPOSE: Automates the entire UPSERT process for the 'ingredients' table
 #          using data from 'seed_files/ingredients.csv'.
+#
+# The database runs in Docker (see docker-compose.yml), so psql is executed
+# INSIDE the container. seed_files/ is mounted at /seed_files there.
+# Run from the repository root: ./db_config/sync_ingredients.sh
 # =========================================================================
 
-# --- Configuration ---
-DB_USER="postgres"
-DB_NAME="skincare_db"
-CSV_PATH="seed_files/ingredients.csv"
+set -e  # stop immediately if any command fails
 
-echo "Starting ingredients synchronization on $DB_NAME..."
+# --- Configuration (credentials come from .env, same source as Docker) ---
+source .env
+CSV_PATH="/seed_files/ingredients.csv"
 
-psql -d $DB_NAME -U $DB_USER <<EOF
+echo "Starting ingredients synchronization on $POSTGRES_DB..."
+
+docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<EOF
 BEGIN;
 
 -- 1. Create the temporary table to hold the CSV data
@@ -30,14 +35,14 @@ CREATE TEMP TABLE temp_ingredients (
 \copy temp_ingredients (ingredient_name, ingredient_description, ingredient_function, cosmetic_classification) FROM '$CSV_PATH' DELIMITER ',' CSV HEADER;
 
 -- 3. Execute the UPSERT (Update or Insert) logic
--- We use ingredient_name as the conflict key, ensuring:
--- - New ingredients are INSERTED.
--- - Existing ingredients have their description/function UPDATED if the data changed in the CSV.
+-- Names are UPPERCASED on the way in: the loader stores INCI names in
+-- uppercase ('HYALURONIC ACID'), so the CSV can stay human-friendly
+-- ('Hyaluronic Acid') without creating duplicate rows for the same substance.
 INSERT INTO ingredients (ingredient_name, ingredient_description, ingredient_function, cosmetic_classification)
-SELECT ingredient_name, ingredient_description, ingredient_function, cosmetic_classification
+SELECT UPPER(ingredient_name), ingredient_description, ingredient_function, cosmetic_classification
 FROM temp_ingredients
 ON CONFLICT (ingredient_name) DO UPDATE
-    SET 
+    SET
         ingredient_description = EXCLUDED.ingredient_description,
         ingredient_function = EXCLUDED.ingredient_function,
         cosmetic_classification = EXCLUDED.cosmetic_classification;

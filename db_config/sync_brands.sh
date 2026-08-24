@@ -2,18 +2,24 @@
 
 # =========================================================================
 # SCRIPT: sync_brands.sh
-# PURPOSE: Automates the core UPSERT (Update or Insert) process for the 
+# PURPOSE: Automates the core UPSERT (Update or Insert) process for the
 #          'brands' table using data from 'seed_files/brands.csv'.
+#
+# The database runs in Docker (see docker-compose.yml), so psql is executed
+# INSIDE the container. seed_files/ is mounted at /seed_files there, which
+# is why the \copy path below is /seed_files and not a Windows path.
+# Run from the repository root: ./db_config/sync_brands.sh
 # =========================================================================
 
-# --- Configuration ---
-DB_USER="postgres"
-DB_NAME="skincare_db"
-CSV_PATH="seed_files/brands.csv"
+set -e  # stop immediately if any command fails
 
-echo "Starting simplified brands synchronization on $DB_NAME..."
+# --- Configuration (credentials come from .env, same source as Docker) ---
+source .env
+CSV_PATH="/seed_files/brands.csv"
 
-psql -d $DB_NAME -U $DB_USER <<EOF
+echo "Starting brands synchronization on $POSTGRES_DB..."
+
+docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<EOF
 BEGIN;
 
 -- 1. Create the temporary table to hold the CSV data
@@ -31,7 +37,7 @@ INSERT INTO brands (brand_name, origin_country)
 SELECT brand_name, origin_country
 FROM temp_brands
 ON CONFLICT (brand_name) DO UPDATE
-    SET 
+    SET
         origin_country = EXCLUDED.origin_country;
 
 -- 4. Commit the transaction

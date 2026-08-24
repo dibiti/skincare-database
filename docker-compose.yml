@@ -16,6 +16,8 @@ services:
       # is empty (first boot). Schema must run before the seed, hence the 00_ prefix.
       - ./db_config/schema.sql:/docker-entrypoint-initdb.d/00_schema.sql:ro
       - ./db_config/01_seed_reference.sql:/docker-entrypoint-initdb.d/01_seed_reference.sql:ro
+      # seed CSVs visible inside the container, so the sync scripts' \copy can read them
+      - ./seed_files:/seed_files:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s

@@ -15,10 +15,13 @@ CREATE TABLE products (
     product_name VARCHAR(255) NOT NULL,
     brand_id INT REFERENCES brands(brand_id),
     product_type VARCHAR(50),
-    price_euro DECIMAL(10, 2),
+    price DECIMAL(10, 2),
+    price_currency VARCHAR(3),
     size_ml DECIMAL(10, 2),
     description TEXT,
-    image_url VARCHAR(255)
+    image_url VARCHAR(255),
+    -- UPSERT conflict target: a product name is unique within its brand
+    CONSTRAINT uq_products_name_brand UNIQUE (product_name, brand_id)
 );
 
 --
@@ -39,6 +42,9 @@ CREATE TABLE product_ingredients (
     product_id INT REFERENCES products(product_id),
     ingredient_id INT REFERENCES ingredients(ingredient_id),
     concentration_percent DECIMAL(5, 2),
+    -- position on the label's ingredient list (1 = first); lists are ordered
+    -- by concentration, so the rank powers "hero ingredient buried at #14" analyses
+    ingredient_rank INT,
     PRIMARY KEY (product_id, ingredient_id)
 );
 
