@@ -106,6 +106,12 @@ def split_ingredients(raw):
     if not text:
         return []
 
+    # '[Free from] Parabens, Formaldehyde, ...' is a marketing list of what
+    # the product does NOT contain. Everything after that marker must be cut,
+    # or the absences would be loaded as ingredients (yes, this happened:
+    # a cream briefly "contained" prohibited formaldehyde).
+    text = re.split(r"\[\s*free\s*from\s*\]", text, flags=re.IGNORECASE)[0]
+
     text = re.sub(r"\[[^\]]*\]", ",", text)
 
     # Chemical names can contain commas ('1,2-Hexanediol'), which a naive
@@ -274,6 +280,15 @@ def main():
 
                     product_id = upsert_product(cur, brand_id, record,
                                                 source["default_currency"])
+
+                    # links are fully regenerable, so wipe and rebuild them per
+                    # product: stale links from an older parse (or an older
+                    # label) would otherwise survive forever, since UPSERTs
+                    # update rows but never remove them
+                    cur.execute(
+                        "DELETE FROM product_ingredients WHERE product_id = %s",
+                        (product_id,),
+                    )
 
                     for rank, (name, conc) in enumerate(
                             split_ingredients(record.get("Ingredients")), start=1):

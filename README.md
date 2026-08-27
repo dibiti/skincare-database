@@ -147,6 +147,23 @@ Design choices worth knowing:
 - **`ingredient_rank`**: the position of each ingredient on the label is stored. Ingredient lists are ordered by concentration, so the rank reveals whether an advertised "hero ingredient" is actually near the top of the formula — one of the core questions of this project.
 - **Multi-currency prices**: scraped prices arrive in USD and EUR depending on the brand, so products store `price` + `price_currency` instead of assuming a single currency.
 
+### 5. Enriching Ingredients with CosIng
+
+Brand websites tell us *what is in* each product; [CosIng](https://ec.europa.eu/growth/tools-databases/cosing/) — the European Commission's official cosmetic ingredient database — tells us *what each ingredient is*. The enrichment script queries CosIng's public search API (the same one the CosIng website itself uses) once per ingredient:
+
+```bash
+python loader/enrich_ingredients.py        # all pending ingredients
+python loader/enrich_ingredients.py 20     # small test batch first
+```
+
+What it fills in: official chemical description, functions (humectant, preservative, UV filter...), CAS/EC numbers, and the regulatory classification — whether the ingredient sits on one of the EU annexes (restricted, colorant, preservative, UV filter).
+
+Design choices worth knowing:
+
+- **The database is the cache**: each ingredient stores its `cosing_status` (`matched` / `not_found`) and when it was checked. Re-running only processes what was never queried — cheap, resumable, and the API is never asked the same question twice.
+- **Politeness**: requests go one at a time with a pause between them; we are guests on a public service.
+- **Regulatory annexes are collected across entries**: CosIng keeps separate records for the same INCI name (inventory entry vs. regulated-substance entry), so the annex number is searched in all exact-name matches, not just the first.
+
 ---
 
 ## Maintenance Notes

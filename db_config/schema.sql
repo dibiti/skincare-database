@@ -32,7 +32,14 @@ CREATE TABLE ingredients (
     ingredient_name VARCHAR(255) NOT NULL UNIQUE,
     ingredient_description TEXT,
     ingredient_function VARCHAR(255),
-    cosmetic_classification VARCHAR(50)
+    cosmetic_classification VARCHAR(50),
+    -- CosIng enrichment (see loader/enrich_ingredients.py)
+    -- 255, not 50: polymer families like CARBOMER carry several CAS numbers
+    cas_no VARCHAR(255),
+    ec_no VARCHAR(255),
+    annex_max_concentration VARCHAR(100),  -- legal max for annex-listed ingredients
+    cosing_status VARCHAR(20),      -- NULL = never queried | 'matched' | 'not_found'
+    cosing_checked_at TIMESTAMPTZ
 );
 
 --
