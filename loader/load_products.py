@@ -26,6 +26,7 @@ DATA_DIR = REPO_ROOT / "data" / "raw"
 # Which file belongs to which brand, and what currency to assume when the
 # price string carries no symbol (CeraVe prints bare numbers, in USD).
 SOURCES = [
+    {"file": "beautyofjoseon_products.json", "brand": "Beauty of Joseon", "default_currency": "USD"},
     {"file": "cerave_products.json",       "brand": "CeraVe",          "default_currency": "USD"},
     {"file": "haruharu_products_full.json", "brand": "Haruharu Wonder", "default_currency": "USD"},
     {"file": "ordinary_products_full.json", "brand": "The Ordinary",    "default_currency": "EUR"},
@@ -259,6 +260,13 @@ def main():
 
             with open(path, encoding="utf-8") as f:
                 records = json.load(f)
+
+            # Catalogs can list the same product name twice (e.g. regional
+            # duplicates, one of them without an ingredient list). Since we
+            # rebuild each product's links on every record, the LAST record
+            # for a name wins — so sort ingredient-bearing records last,
+            # or an empty duplicate would wipe the links of the good one.
+            records.sort(key=lambda r: bool(split_ingredients(r.get("Ingredients"))))
 
             # Fail loudly: an empty file means a broken scraper, not "no news".
             if not records:

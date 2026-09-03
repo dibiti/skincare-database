@@ -41,6 +41,7 @@ The project is structured to separate the database configuration, fixed data fil
     - **`processed/`**: Cleaned and structured data (e.g., CSV) ready for database ingestion.
 - **`loader/`**: Python script that upserts the scraped JSON files into PostgreSQL (see "Loading Products into the Database" below).
 - **`scraping_scripts/`**: Python scripts used for web scraping and data extraction.
+    - **`beautyofjoseon_scraper.py`**: Uses Shopify's public `/products.json` catalog endpoint (no Selenium needed); full INCI lists come from each product page's server-rendered dialog.
     - **`the_ordinary_scraper.py/`**: The needed information of all products of the brand, saved in .json file.
     - **`scrape_ingredients_haruharuwonder.py`**: I have notice that the brand haruharu wonder has a page dedicated a ingredients they use in their products, I decided to make a script to get that information about ingredientes to start populate my table, they are 97 total.
     - **` haruharuwonder_scraper`**: The needed information of all products of the brand, saved in .json file.
