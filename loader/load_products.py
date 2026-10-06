@@ -46,6 +46,14 @@ SKIN_TYPE_MAP = {
 
 NOT_FOUND = re.compile(r"not found", re.IGNORECASE)
 
+# One substance, five spellings: EU INCI labels water bilingually. All map
+# to the single canonical row 'WATER' (CAS 7732-18-5).
+INCI_ALIASES = {
+    "AQUA": "WATER",
+    "AQUA (WATER)": "WATER",
+    "WATER (AQUA)": "WATER",
+}
+
 
 # --------------------------------------------------------------------------
 # Parsing helpers: scraped strings -> clean typed values
@@ -115,13 +123,16 @@ def split_ingredients(raw):
 
     text = re.sub(r"\[[^\]]*\]", ",", text)
 
-    # Chemical names can contain commas ('1,2-Hexanediol'), which a naive
-    # comma-split breaks into '1' + '2-Hexanediol'. When a fragment is just
-    # digits, it belongs to the next fragment — glue them back together.
+    # Commas appear INSIDE two kinds of names and a naive split breaks both:
+    #   '1,2-Hexanediol'        -> '1' + '2-Hexanediol'   (chemical numbering)
+    #   'EXTRACT(10,000PPM)'    -> 'EXTRACT(10' + '000PPM)' (thousands separator)
+    # Glue a fragment back when the previous one is bare digits, or ends in
+    # an unclosed '(digits' — both can only mean the comma was part of a name.
     parts = []
     for fragment in text.split(","):
         fragment = fragment.strip()
-        if parts and re.fullmatch(r"\d+", parts[-1]):
+        if parts and (re.fullmatch(r"\d+", parts[-1])
+                      or re.search(r"\(\d+$", parts[-1])):
             parts[-1] = parts[-1] + "," + fragment
         else:
             parts.append(fragment)
@@ -137,7 +148,32 @@ def split_ingredients(raw):
             concentration = float(conc_match.group(1))
             name = name.replace(conc_match.group(0), "").strip()
 
+        # K-beauty brands declare trace concentrations in PPM glued to the
+        # name: 'CENTELLA ASIATICA EXTRACT (25 PPM)' or 'ASIATICOSIDE(20PPM)'.
+        # That is data, not name: 25 ppm = 25/10,000 of a percent.
+        ppm_match = re.search(r"\(?\s*([\d,]+(?:\.\d+)?)\s*PPM\s*\)?", name, re.IGNORECASE)
+        if ppm_match:
+            concentration = float(ppm_match.group(1).replace(",", "")) / 10_000
+            name = name.replace(ppm_match.group(0), "").strip()
+
+        name = re.sub(r"\(\s*\)", "", name)          # drop empty '()' leftovers
+        name = re.sub(r"\s*\(", " (", name)          # one space before '(': 'WATER(AQUA)' == 'WATER (AQUA)'
         name = re.sub(r"\s{2,}", " ", name).strip(" .*").upper()
+
+        # leaked label preambles: formula codes ('913116 38 - AQUA...') and
+        # full headers ('2051504 FIL CODE - T279181/1 – INGREDIENTS: AQUA...')
+        name = re.sub(r"^.*INGREDIENTS?\s*:\s*", "", name)
+        name = re.sub(r"^[\d\s]+-\s*", "", name)
+
+        # INCI water comes in bi- and trilingual spellings: 'AQUA (WATER)',
+        # 'AQUA / WATER / EAU' (L'Oréal brands label in three languages).
+        # All collapse to the canonical 'WATER'. (Merging automatically by
+        # CAS number looked tempting but is WRONG: botanical families share
+        # one CAS across genuinely different ingredients — ginseng root
+        # extract vs seed oil.)
+        if re.fullmatch(r"(AQUA|WATER|EAU)(\s*/\s*(AQUA|WATER|EAU)){1,2}", name):
+            name = "WATER"
+        name = INCI_ALIASES.get(name, name)
 
         if len(name) < 2 or len(name) > 255:
             continue

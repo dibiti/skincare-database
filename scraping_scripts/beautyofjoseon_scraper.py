@@ -18,6 +18,7 @@ the other scrapers so the loader ingests it unchanged.
 import json
 import re
 import time
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import requests
@@ -195,23 +196,39 @@ def guess_product_type(title):
     return "Others / Unclassified"
 
 
+# How long a cached ingredient list stays trusted. Brands reformulate
+# products without changing their names, so the accumulation cache must
+# expire: after this many days a product is re-scraped even though we
+# already "know" its ingredients. Freshness has a price; staleness has
+# a bigger one.
+CACHE_TTL_DAYS = 90
+
+
 def load_previous_ingredients():
-    """Ingredient lists found by earlier runs, keyed by product URL.
+    """Ingredient lists found by earlier runs, keyed by product URL, each
+    with the timestamp of when it was scraped.
 
     The site's app scripts fail randomly for a fraction of pages on any
     given run, so results accumulate across runs instead of starting from
-    zero: whatever a previous run managed to extract is kept, and only the
-    still-missing products are attempted again. (Same principle as the
-    CosIng cache: never re-ask what you already know.)"""
+    zero. But the cache is not eternal: entries older than CACHE_TTL_DAYS
+    are dropped here, which makes the next loop re-scrape that product and
+    pick up any reformulation. (Entries from before timestamps existed are
+    grandfathered in as 'scraped today' on the next write.)"""
     if not OUTPUT_PATH.exists():
         return {}
     with open(OUTPUT_PATH, encoding="utf-8") as f:
         previous = json.load(f)
-    return {
-        p["Source_URL"]: p["Ingredients"]
-        for p in previous
-        if p.get("Ingredients") and p["Ingredients"] != "Ingredients Not Found"
-    }
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=CACHE_TTL_DAYS)
+    cache = {}
+    for p in previous:
+        if not p.get("Ingredients") or p["Ingredients"] == "Ingredients Not Found":
+            continue
+        scraped_at = p.get("Ingredients_Scraped_At")
+        if scraped_at and datetime.fromisoformat(scraped_at) < cutoff:
+            continue   # expired: force a fresh scrape of this product
+        cache[p["Source_URL"]] = (p["Ingredients"], scraped_at)
+    return cache
 
 
 def main():
@@ -227,8 +244,9 @@ def main():
         url = f"{BASE_URL}/products/{product['handle']}"
         print(f"[{i}/{len(catalog)}] {product['title'][:60]}")
 
+        scraped_at = None
         if url in known_ingredients:
-            ingredients = known_ingredients[url]
+            ingredients, scraped_at = known_ingredients[url]
             page_html = ""   # no page fetch needed; size comes from the variant
         elif known_ingredients:
             # Re-run for a product that already failed the static path once:
@@ -259,6 +277,11 @@ def main():
             BeautifulSoup(product.get("body_html") or "", "html.parser").get_text(separator=" ")
         )
 
+        # a reused cache entry keeps its original timestamp (so the TTL keeps
+        # counting from the real scrape date); a fresh extraction is stamped now
+        if ingredients != "Ingredients Not Found" and not scraped_at:
+            scraped_at = datetime.now(timezone.utc).isoformat()
+
         extracted_data.append({
             "Name": clean_text(product["title"]),
             "Product Type": guess_product_type(product["title"]),
@@ -266,6 +289,7 @@ def main():
             "Size (ml)": extract_size_ml(page_html, variant.get("title")),
             "Description": description or "Description Not Found",
             "Ingredients": ingredients,
+            "Ingredients_Scraped_At": scraped_at,
             "Source_URL": url,
         })
 
