@@ -27,6 +27,7 @@ DATA_DIR = REPO_ROOT / "data" / "raw"
 # price string carries no symbol (CeraVe prints bare numbers, in USD).
 SOURCES = [
     {"file": "beautyofjoseon_products.json", "brand": "Beauty of Joseon", "default_currency": "USD"},
+    {"file": "weleda_products.json",        "brand": "Weleda",          "default_currency": "CHF"},
     {"file": "cerave_products.json",       "brand": "CeraVe",          "default_currency": "USD"},
     {"file": "haruharu_products_full.json", "brand": "Haruharu Wonder", "default_currency": "USD"},
     {"file": "ordinary_products_full.json", "brand": "The Ordinary",    "default_currency": "EUR"},
@@ -160,20 +161,7 @@ def split_ingredients(raw):
         name = re.sub(r"\s*\(", " (", name)          # one space before '(': 'WATER(AQUA)' == 'WATER (AQUA)'
         name = re.sub(r"\s{2,}", " ", name).strip(" .*").upper()
 
-        # leaked label preambles: formula codes ('913116 38 - AQUA...') and
-        # full headers ('2051504 FIL CODE - T279181/1 – INGREDIENTS: AQUA...')
-        name = re.sub(r"^.*INGREDIENTS?\s*:\s*", "", name)
-        name = re.sub(r"^[\d\s]+-\s*", "", name)
-
-        # INCI water comes in bi- and trilingual spellings: 'AQUA (WATER)',
-        # 'AQUA / WATER / EAU' (L'Oréal brands label in three languages).
-        # All collapse to the canonical 'WATER'. (Merging automatically by
-        # CAS number looked tempting but is WRONG: botanical families share
-        # one CAS across genuinely different ingredients — ginseng root
-        # extract vs seed oil.)
-        if re.fullmatch(r"(AQUA|WATER|EAU)(\s*/\s*(AQUA|WATER|EAU)){1,2}", name):
-            name = "WATER"
-        name = INCI_ALIASES.get(name, name)
+        name = normalize_inci_name(name)
 
         if len(name) < 2 or len(name) > 255:
             continue
@@ -182,6 +170,53 @@ def split_ingredients(raw):
         seen.add(name)
         result.append((name, concentration))
     return result
+
+
+def normalize_inci_name(name):
+    """Cleans one raw ingredient name into its canonical INCI form.
+    Shared by both ingredient paths: comma-split strings and the
+    structured lists some sources provide."""
+    # drop empty '()' leftovers, one space before '(', collapse whitespace
+    name = re.sub(r"\(\s*\)", "", name)
+    name = re.sub(r"\s*\(", " (", name)
+    name = re.sub(r"\s{2,}", " ", name).strip(" .*").upper()
+
+    # leaked label preambles: formula codes ('913116 38 - AQUA...') and
+    # full headers ('2051504 FIL CODE - T279181/1 – INGREDIENTS: AQUA...')
+    name = re.sub(r"^.*INGREDIENTS?\s*:\s*", "", name)
+    name = re.sub(r"^[\d\s]+-\s*", "", name)
+
+    # INCI water comes in bi- and trilingual spellings: 'AQUA (WATER)',
+    # 'AQUA / WATER / EAU' (L'Oréal brands label in three languages).
+    # All collapse to the canonical 'WATER'. (Merging automatically by
+    # CAS number looked tempting but is WRONG: botanical families share
+    # one CAS across genuinely different ingredients — ginseng root
+    # extract vs seed oil.)
+    if re.fullmatch(r"(AQUA|WATER|EAU)(\s*/\s*(AQUA|WATER|EAU)){1,2}", name):
+        name = "WATER"
+    return INCI_ALIASES.get(name, name)
+
+
+def ingredients_for(record):
+    """Returns the ordered [(inci_name, concentration)] list for a record.
+
+    Sources that provide a STRUCTURED ingredient list (e.g. Weleda's API)
+    put it in 'Ingredients_List'; it is used as-is — re-joining it into a
+    comma string only to split it again would reintroduce every comma bug
+    the string path has to fight. String sources fall back to
+    split_ingredients()."""
+    structured = record.get("Ingredients_List")
+    if isinstance(structured, list):
+        seen = set()
+        result = []
+        for raw in structured:
+            name = normalize_inci_name(str(raw))
+            if len(name) < 2 or len(name) > 255 or name in seen:
+                continue
+            seen.add(name)
+            result.append((name, None))
+        return result
+    return split_ingredients(record.get("Ingredients"))
 
 
 # --------------------------------------------------------------------------
@@ -302,7 +337,7 @@ def main():
             # rebuild each product's links on every record, the LAST record
             # for a name wins — so sort ingredient-bearing records last,
             # or an empty duplicate would wipe the links of the good one.
-            records.sort(key=lambda r: bool(split_ingredients(r.get("Ingredients"))))
+            records.sort(key=lambda r: bool(ingredients_for(r)))
 
             # Fail loudly: an empty file means a broken scraper, not "no news".
             if not records:
@@ -335,7 +370,7 @@ def main():
                     )
 
                     for rank, (name, conc) in enumerate(
-                            split_ingredients(record.get("Ingredients")), start=1):
+                            ingredients_for(record), start=1):
                         ingredient_id = get_or_create_ingredient(cur, name)
                         link_ingredient(cur, product_id, ingredient_id, conc, rank)
                         links += 1
