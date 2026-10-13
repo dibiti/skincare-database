@@ -69,7 +69,7 @@ def query_cosing(session, text, max_attempts=3):
             if attempt < max_attempts:
                 time.sleep(2 * attempt)
             else:
-                print(f"   API error for '{name}' after {max_attempts} attempts: {e}")
+                print(f"   API error for '{text}' after {max_attempts} attempts: {e}")
     return []
 
 

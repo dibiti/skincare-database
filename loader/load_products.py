@@ -27,6 +27,7 @@ DATA_DIR = REPO_ROOT / "data" / "raw"
 # price string carries no symbol (CeraVe prints bare numbers, in USD).
 SOURCES = [
     {"file": "beautyofjoseon_products.json", "brand": "Beauty of Joseon", "default_currency": "USD"},
+    {"file": "theinkeylist_products.json",  "brand": "The Inkey List",  "default_currency": "USD"},
     {"file": "weleda_products.json",        "brand": "Weleda",          "default_currency": "CHF"},
     {"file": "cerave_products.json",       "brand": "CeraVe",          "default_currency": "USD"},
     {"file": "haruharu_products_full.json", "brand": "Haruharu Wonder", "default_currency": "USD"},
