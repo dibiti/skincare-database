@@ -30,6 +30,7 @@ SOURCES = [
     {"file": "theinkeylist_products.json",  "brand": "The Inkey List",  "default_currency": "USD"},
     {"file": "weleda_products.json",        "brand": "Weleda",          "default_currency": "CHF"},
     {"file": "cerave_products.json",       "brand": "CeraVe",          "default_currency": "USD"},
+    {"file": "cosrx_products.json",        "brand": "COSRX",           "default_currency": "USD"},
     {"file": "haruharu_products_full.json", "brand": "Haruharu Wonder", "default_currency": "USD"},
     {"file": "ordinary_products_full.json", "brand": "The Ordinary",    "default_currency": "EUR"},
     {"file": "vtcosmetics_products.json",   "brand": "VT Cosmetics",    "default_currency": "USD"},
