@@ -28,6 +28,7 @@ DATA_DIR = REPO_ROOT / "data" / "raw"
 SOURCES = [
     {"file": "beautyofjoseon_products.json", "brand": "Beauty of Joseon", "default_currency": "USD"},
     {"file": "theinkeylist_products.json",  "brand": "The Inkey List",  "default_currency": "USD"},
+    {"file": "typology_products.json",      "brand": "Typology",        "default_currency": "EUR"},
     {"file": "weleda_products.json",        "brand": "Weleda",          "default_currency": "CHF"},
     {"file": "cerave_products.json",       "brand": "CeraVe",          "default_currency": "USD"},
     {"file": "cosrx_products.json",        "brand": "COSRX",           "default_currency": "USD"},
