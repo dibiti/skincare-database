@@ -20,6 +20,10 @@ from pathlib import Path
 import psycopg2
 from dotenv import load_dotenv
 
+# Windows consoles default to cp1252; never let a progress print crash on a
+# typographic character scraped from the web.
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = REPO_ROOT / "data" / "raw"
 
@@ -34,6 +38,7 @@ SOURCES = [
     {"file": "cosrx_products.json",        "brand": "COSRX",           "default_currency": "USD"},
     {"file": "haruharu_products_full.json", "brand": "Haruharu Wonder", "default_currency": "USD"},
     {"file": "ordinary_products_full.json", "brand": "The Ordinary",    "default_currency": "EUR"},
+    {"file": "paulaschoice_products.json",  "brand": "Paula's Choice",  "default_currency": "USD"},
     {"file": "vtcosmetics_products.json",   "brand": "VT Cosmetics",    "default_currency": "USD"},
 ]
 
